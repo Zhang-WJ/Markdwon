@@ -128,7 +128,7 @@ module Version_ActivePattern =
     // val it : MarkdownSpan list =
     // [Literal "hello"; HardLineBreak; Literal "world"; HardLineBreak;
     // Literal "!!!"]
-    
+open Version_ActivePattern
 module List =
     let partitionWhile f =
         let rec loop acc = function
@@ -152,5 +152,36 @@ let (|LineSeparated|) lines =
 let (|AsCharList|) (str: string) =
     List.ofSeq str
     
+let rec parseBlocks lines = seq {
+    match lines with
+    | AsCharList (StartsWith ['#'; ' '] heading) :: lines ->
+        yield Heading(1, parseSpans [] heading |> List.ofSeq)
+        yield! parseBlocks lines
+        
+    | AsCharList (StartsWith ['#'; '#'; ' '] heading):: lines ->
+        yield Heading(2, parseSpans [] heading |> List.ofSeq)
+        yield! parseBlocks lines
+    
+    | PrefixedLines "    " (body, lines) when body <> [] ->
+        yield CodeBlock(body)
+        yield! parseBlocks lines
+        
+    | LineSeparated (body, lines) when body <> [] ->
+        let body = String.concat " " body |> List.ofSeq
+        yield Paragraph(parseSpans [] body |> List.ofSeq)
+        yield! parseBlocks lines
+    
+    | line:: lines when System.String.IsNullOrWhiteSpace(line) ->
+        yield! parseBlocks lines
+    
+    | _ -> ()
+}
+    
+let sample = """# Introducing F#
+F# is a _functional-first_ language
+which looks like this:
+    let msg = "world"
+    printfn "hello %s!" msg
+This sample prints `hello world!`"""
         
     
