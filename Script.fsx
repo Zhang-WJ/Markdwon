@@ -180,8 +180,16 @@ let rec parseBlocks lines = seq {
 let sample = """# Introducing F#
 F# is a _functional-first_ language
 which looks like this:
+
     let msg = "world"
     printfn "hello %s!" msg
 This sample prints `hello world!`"""
-        
-    
+// Sample for parseBlock
+(*sample.Split('\r', '\n') |> List.ofSeq |> parseBlocks |> List.ofSeq;;
+val it : MarkdownBlock list =
+  [Heading (1,[Literal "Introducing F#"]);
+   Paragraph
+     [Literal "F# is a "; Emphasis [Literal "functional-first"];
+      Literal " language which looks like this:"];
+   CodeBlock ["let msg = "world""; "printfn "hello %s!" msg"];
+   Paragraph [Literal "This sample prints "; InlineCode "hello world!"]]*)
