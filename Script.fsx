@@ -13,6 +13,7 @@ and MarkdownSpan =
     | Strong of MarkdownSpans
     | Emphasis of MarkdownSpans
     | HyperLink of MarkdownSpans * string
+    | HardLineBreak
     
 module Version_Explicit =
     let rec parseInlineBody acc = function
@@ -85,6 +86,13 @@ module Version_ActivePattern =
         }
         
         match chars with
+        | StartsWith [' '; ' '; '\n'; '\r'] chars
+        | StartsWith [' '; ' '; '\n'] chars
+        | StartsWith [' '; ' '; '\r'] chars ->
+            yield! emitLiteral
+            yield HardLineBreak
+            yield! parseSpans [] chars
+            
         | Delimited ['`'] (body, chars) ->
             yield! emitLiteral
             yield InlineCode (toString body)
@@ -114,4 +122,35 @@ module Version_ActivePattern =
     // val it : MarkdownSpan list =
     //  [Strong [Literal "import "; InlineCode "code"]; Literal " and ";
     //   Emphasis [Literal "emphasized"]]
+    
+    // "hello  \n\rworld  \r!!!"|> List.ofSeq |> parseSpans [] |> List.ofSeq;;
+    // the output as below
+    // val it : MarkdownSpan list =
+    // [Literal "hello"; HardLineBreak; Literal "world"; HardLineBreak;
+    // Literal "!!!"]
+    
+module List =
+    let partitionWhile f =
+        let rec loop acc = function
+            | x::xs when f x -> loop (x::acc) xs
+            | xs -> List.rev acc, xs
+        loop []
+
+let (|PrefixedLines|) (prefix: string) (lines:list<string>) =
+    let prefixed, other =
+        lines |> List.partitionWhile (fun (line:string) ->
+           line.StartsWith(prefix))
+    [ for (line: string )in prefixed ->
+        line.Substring(prefix.Length) ], other
+    
+let (|LineSeparated|) lines =
+    let isWhite = System.String.IsNullOrWhiteSpace
+    match List.partitionWhile (isWhite >> not) lines with
+    | par, _::rest
+    | par, ([] as rest) -> par, rest
+
+let (|AsCharList|) (str: string) =
+    List.ofSeq str
+    
+        
     
