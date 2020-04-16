@@ -148,18 +148,25 @@ let (|LineSeparated|) lines =
     match List.partitionWhile (isWhite >> not) lines with
     | par, _::rest
     | par, ([] as rest) -> par, rest
-
+    
 let (|AsCharList|) (str: string) =
     List.ofSeq str
-    
-let rec parseBlocks lines = seq {
+
+let (|ParseHeading|_|) lines =  
     match lines with
     | AsCharList (StartsWith ['#'; ' '] heading) :: lines ->
-        yield Heading(1, parseSpans [] heading |> List.ofSeq)
-        yield! parseBlocks lines
+        Some(1, heading, lines)
         
-    | AsCharList (StartsWith ['#'; '#'; ' '] heading):: lines ->
-        yield Heading(2, parseSpans [] heading |> List.ofSeq)
+    | AsCharList (StartsWith ['#'; '#'; ' '] heading) :: lines ->
+        Some(2, heading, lines)
+    
+    | _ -> None
+
+
+let rec parseBlocks lines = seq {
+    match lines with
+    | ParseHeading (size, heading, lines) ->
+        yield Heading(size, parseSpans [] heading |> List.ofSeq)
         yield! parseBlocks lines
     
     | PrefixedLines "    " (body, lines) when body <> [] ->
