@@ -4,6 +4,7 @@ and MarkdownBlock =
     | Heading of int * MarkdownSpans
     | Paragraph of MarkdownSpans
     | CodeBlock of list<string>
+    | BlockQuote of list<MarkdownBlock> // for quote Type in this DU
     
 and MarkdownSpans = list<MarkdownSpan>
 
@@ -162,9 +163,19 @@ let (|ParseHeading|_|) lines =
     
     | _ -> None
 
+let (|ParseBlockQuote|_|) lines =
+    match lines with
+    | AsCharList (StartsWith ['>'] body) :: lines ->
+        Some(body, lines)
+        
+    | _ -> None
 
 let rec parseBlocks lines = seq {
     match lines with
+    | ParseBlockQuote (body, lines) ->
+        yield BlockQuote (parseBlocks ([toString body] |> List.ofSeq) |> List.ofSeq)
+        yield! parseBlocks lines
+    
     | ParseHeading (size, heading, lines) ->
         yield Heading(size, parseSpans [] heading |> List.ofSeq)
         yield! parseBlocks lines
@@ -186,6 +197,8 @@ let rec parseBlocks lines = seq {
     
 let sample = """# Introducing F#
 F# is a _functional-first_ language
+
+>This is quote
 which looks like this:
 
     let msg = "world"
@@ -200,3 +213,44 @@ val it : MarkdownBlock list =
       Literal " language which looks like this:"];
    CodeBlock ["let msg = "world""; "printfn "hello %s!" msg"];
    Paragraph [Literal "This sample prints "; InlineCode "hello world!"]]*)
+   
+   
+open System.IO
+
+let outputElement (output:TextWriter) tag attributes body =
+    let attrString =
+        [for k, v in attributes -> k + "=\"" + v + "\""]
+        |> String.concat " "
+        
+    output.Write("<" + tag + attrString + ">")
+    body()
+    output.Write("</" + tag + ">")
+    
+let rec formatSpan (output: TextWriter) = function
+    | Literal str ->
+        output.Write(str)
+    | Strong spans ->
+        outputElement output "strong" [] (fun () ->
+            spans |> List.iter (formatSpan output))
+    | Emphasis spans ->
+        outputElement output "em" [] (fun () ->
+            spans |> List.iter (formatSpan output))
+    | HyperLink (spans, url) ->
+        outputElement output "a" ["href", url] (fun () ->
+            spans |> List.iter (formatSpan output))
+    | InlineCode code ->
+        output.Write("<code>" + code + "</code>")
+
+let rec formatBlock (output: TextWriter) =  function
+    | Heading (size, spans) ->
+        outputElement output ("h"+size.ToString()) [] (fun () ->
+            spans |> List.iter (formatSpan output))
+    | Paragraph spans ->
+        outputElement output "p" [] (fun () ->
+            spans |> List.iter (formatSpan output))
+    | CodeBlock lines ->
+        outputElement output "pre" [] (fun () ->
+            lines |> List.iter output.WriteLine)
+    | BlockQuote block ->
+         outputElement output "blockquote" [] (fun () ->
+            block |> List.iter (formatBlock output))
