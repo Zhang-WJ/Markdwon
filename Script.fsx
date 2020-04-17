@@ -165,7 +165,7 @@ let (|ParseHeading|_|) lines =
 
 let (|ParseBlockQuote|_|) lines =
     match lines with
-    | AsCharList (StartsWith ['>'] body) :: lines ->
+    | AsCharList (StartsWith ['>'; ' '] body) :: lines ->
         Some(body, lines)
         
     | _ -> None
@@ -198,7 +198,7 @@ let rec parseBlocks lines = seq {
 let sample = """# Introducing F#
 F# is a _functional-first_ language
 
->This is quote
+> This is quote
 which looks like this:
 
     let msg = "world"
@@ -217,14 +217,19 @@ val it : MarkdownBlock list =
    
 open System.IO
 
+// helper function for generating closing tag
 let outputElement (output:TextWriter) tag attributes body =
     let attrString =
         [for k, v in attributes -> k + "=\"" + v + "\""]
         |> String.concat " "
         
-    output.Write("<" + tag + attrString + ">")
+    output.Write("< " + tag + attrString + " >")
     body()
     output.Write("</" + tag + ">")
+    
+// -----------------------------------------------------------------------
+// format for MarkdownSpan
+// -----------------------------------------------------------------------
     
 let rec formatSpan (output: TextWriter) = function
     | Literal str ->
@@ -240,7 +245,14 @@ let rec formatSpan (output: TextWriter) = function
             spans |> List.iter (formatSpan output))
     | InlineCode code ->
         output.Write("<code>" + code + "</code>")
+        
+    | HardLineBreak ->
+        output.Write("<br />")
 
+    
+// -----------------------------------------------------------------------
+// format for MarkdownBlock
+// -----------------------------------------------------------------------
 let rec formatBlock (output: TextWriter) =  function
     | Heading (size, spans) ->
         outputElement output ("h"+size.ToString()) [] (fun () ->
@@ -254,3 +266,59 @@ let rec formatBlock (output: TextWriter) =  function
     | BlockQuote block ->
          outputElement output "blockquote" [] (fun () ->
             block |> List.iter (formatBlock output))
+         
+ // ==========================================================================
+ // Processing Markdown documents
+ // ==========================================================================
+
+module Matching =
+    let (|SpanNode|_|) span =
+        match span with
+        | Strong spans | Emphasis spans | HyperLink (spans, _) ->
+            Some(box span, spans)
+        | _ -> None
+        
+    let SpanNode (span: obj, children) =
+        match unbox span with
+        | Strong _ -> Strong children
+        | Emphasis _ -> Emphasis children
+        | HyperLink(_, url) -> HyperLink(children, url)
+        | _ -> invalidArg "" "Incorrect MarkdownSpan"
+    
+    let (|BlockNode|_|) block =
+        match block with
+        | Heading(_, spans)
+        | Paragraph(spans) -> Some(box block, spans)
+        |_ -> None
+        
+    let BlockNode (block: obj, spans) =
+        match unbox block with
+        | Heading(a, _) -> Heading(a, spans)
+        | Paragraph(_) -> Paragraph(spans)
+        | _ -> invalidArg "" "Incorrect MarkdownBlock."
+  
+let rec generateSpanRefs (refs: ResizeArray<_>) = function
+    | HyperLink (body, url) as spans ->
+        let id = sprintf "[%d]" (refs.Count + 1)
+        refs.Add(id, url)
+        [spans; Literal id]
+        
+    | Matching.SpanNode (shape, children) ->
+        let children = children |> List.collect (generateSpanRefs refs)
+        [Matching.SpanNode(shape, children)]
+        
+    | span -> [span]
+    
+let generateBlockRefs refs = function
+    | Matching.BlockNode(shape, children) ->
+        let children = children |> List.collect (generateSpanRefs refs)
+        Matching.BlockNode(shape, children)
+    | block -> block
+    
+    
+let ndoc = parseBlocks [ """For more information, see the 
+  [F# home page](http://fsharp.net) or read [Real-World Functional 
+  Programming](http://manning.com/petricek) published by 
+  [Manning](http://manning.com).""" ] |> List.ofSeq
+let refs = ResizeArray<_>()
+let docRef = ndoc |> List.map (generateBlockRefs refs)
