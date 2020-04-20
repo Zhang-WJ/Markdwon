@@ -289,7 +289,7 @@ module Matching =
         match block with
         | Heading(_, spans)
         | Paragraph(spans) -> Some(box block, spans)
-        |_ -> None
+        | _ -> None
         
     let BlockNode (block: obj, spans) =
         match unbox block with
@@ -322,3 +322,15 @@ let ndoc = parseBlocks [ """For more information, see the
   [Manning](http://manning.com).""" ] |> List.ofSeq
 let refs = ResizeArray<_>()
 let docRef = ndoc |> List.map (generateBlockRefs refs)
+
+// count words in document
+let rec countSpanWords = function
+    | Literal str ->
+        str.Split([|','; '.'; '!'; '\n'; '\r'; ' '|], System.StringSplitOptions.RemoveEmptyEntries).Length
+    | Matching.SpanNode(_, spans) ->
+        spans |> List.sumBy countSpanWords
+    | _ -> 0
+    
+let rec countBlock = function
+    | Matching.BlockNode (_, spans) ->  spans |> List.sumBy countSpanWords
+    | _ -> 0
